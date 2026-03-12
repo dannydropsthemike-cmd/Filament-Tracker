@@ -432,9 +432,11 @@ const modalQR = document.getElementById('modal-qr');
 document.getElementById('modal-qr-close').addEventListener('click', closeQRModal);
 modalQR.addEventListener('click', e => { if (e.target === modalQR) closeQRModal(); });
 
-// Toggle to scanner state
-document.getElementById('qr-scan-toggle-btn').addEventListener('click', () => switchQRState('scan'));
-// Back to show state
+// Toggle to scanner — opens fullscreen overlay instead of embedding in modal
+document.getElementById('qr-scan-toggle-btn').addEventListener('click', () => {
+  closeQRModal();
+  openScannerOverlay();
+});
 document.getElementById('qr-back-to-show-btn').addEventListener('click', () => switchQRState('show'));
 
 function switchQRState(state) {
@@ -443,12 +445,6 @@ function switchQRState(state) {
   document.getElementById('qr-scan-result').style.display = 'none';
   document.getElementById('qr-scan-back-row').style.display = state === 'scan' ? 'block' : 'none';
   document.getElementById('qr-modal-title').textContent = state === 'scan' ? 'Scan QR Code' : 'QR Code';
-
-  if (state === 'scan') {
-    startModalScanner();
-  } else {
-    stopModalScanner();
-  }
 }
 
 async function openQRModal(id) {
@@ -488,7 +484,6 @@ async function openQRModal(id) {
 }
 
 function closeQRModal() {
-  stopModalScanner();
   modalQR.classList.remove('visible');
   qrDisplayId = null;
   // Reset state
@@ -539,37 +534,64 @@ document.getElementById('qr-download-btn').addEventListener('click', async () =>
   showToast('Downloaded', 'QR code saved.', 'success');
 });
 
-// ── Modal Scanner ───────────────────────────────────────────
-async function startModalScanner() {
-  if (modalScannerRunning) return;
+// ════════════════════════════════════════════════════════════
+// FULLSCREEN SCANNER OVERLAY
+// Lives outside any modal/scroll container for reliable init
+// ════════════════════════════════════════════════════════════
+let fsScanner = null, fsScannerRunning = false;
+let fsScanFilament = null, fsScanQty = 0;
+
+function openScannerOverlay() {
+  const overlay = document.getElementById('scanner-overlay');
+  overlay.style.display = 'flex';
+  document.getElementById('scanner-result').style.display = 'none';
+  // Small delay so the DOM is painted and sized before init
+  setTimeout(startFsScanner, 150);
+}
+
+function closeScannerOverlay() {
+  stopFsScanner();
+  document.getElementById('scanner-overlay').style.display = 'none';
+  document.getElementById('scanner-result').style.display = 'none';
+}
+
+async function startFsScanner() {
+  if (fsScannerRunning) return;
+  // Clear any previous instance
+  const container = document.getElementById('fullscreen-qr-reader');
+  container.innerHTML = '';
   try {
-    modalScanner = new Html5Qrcode('qr-modal-reader');
-    await modalScanner.start(
+    fsScanner = new Html5Qrcode('fullscreen-qr-reader');
+    await fsScanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 180, height: 180 }, aspectRatio: 1.0 },
-      onModalScanSuccess, () => {}
+      { fps: 15, qrbox: { width: 240, height: 240 } },
+      onFsScanSuccess,
+      () => {} // ignore per-frame errors
     );
-    modalScannerRunning = true;
+    fsScannerRunning = true;
+    console.log('[Scanner] Started');
   } catch(e) {
-    console.error('[QR Modal]', e);
-    showToast('Camera Error', 'Allow camera access and try again.', 'error');
+    console.error('[Scanner]', e);
+    showToast('Camera Error', 'Allow camera access in Settings and try again.', 'error');
+    closeScannerOverlay();
   }
 }
 
-async function stopModalScanner() {
-  if (!modalScannerRunning || !modalScanner) return;
-  try { await modalScanner.stop(); } catch(e) {}
-  modalScannerRunning = false;
+async function stopFsScanner() {
+  if (!fsScannerRunning || !fsScanner) return;
+  try { await fsScanner.stop(); } catch(e) { console.warn('[Scanner stop]', e); }
+  fsScannerRunning = false;
+  fsScanner = null;
 }
 
-let modalScanFilament = null, modalScanQty = 0;
-
-async function onModalScanSuccess(decoded) {
-  try { if (modalScanner) await modalScanner.pause(true); } catch(e) {}
+async function onFsScanSuccess(decoded) {
+  // Pause scanner while we handle result
+  try { if (fsScanner) await fsScanner.pause(true); } catch(e) {}
+  if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
 
   if (!decoded.startsWith('filavault:')) {
     showToast('Unknown QR', 'Not a Filament-Tracker QR code.', 'warn');
-    setTimeout(() => { try { modalScanner && modalScanner.resume(); } catch(e){} }, 2000);
+    setTimeout(() => { try { fsScanner && fsScanner.resume(); } catch(e){} }, 2000);
     return;
   }
 
@@ -577,44 +599,43 @@ async function onModalScanSuccess(decoded) {
   const f  = await getFilament(id);
   if (!f) {
     showToast('Not Found', 'This filament is not in your vault.', 'error');
-    setTimeout(() => { try { modalScanner && modalScanner.resume(); } catch(e){} }, 2000);
+    setTimeout(() => { try { fsScanner && fsScanner.resume(); } catch(e){} }, 2000);
     return;
   }
 
-  modalScanFilament = f;
-  modalScanQty = f.qty;
+  fsScanFilament = f;
+  fsScanQty = f.qty;
 
-  document.getElementById('qr-scan-name').textContent  = f.name;
-  document.getElementById('qr-scan-meta').textContent  = `${f.brand ? f.brand + ' · ' : ''}${f.material} · Currently ${f.qty} spool${f.qty!==1?'s':''}`;
-  document.getElementById('qr-qty-display').textContent = modalScanQty;
-  document.getElementById('qr-scan-result').style.display = 'block';
-  document.getElementById('qr-scan-back-row').style.display = 'none';
-
-  if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
+  document.getElementById('scanner-result-name').textContent = f.name;
+  document.getElementById('scanner-result-meta').textContent =
+    `${f.brand ? f.brand + ' · ' : ''}${f.material} · Currently ${f.qty} spool${f.qty!==1?'s':''}`;
+  document.getElementById('scanner-qty-display').textContent = fsScanQty;
+  document.getElementById('scanner-result').style.display = 'block';
 }
 
-// Qty buttons in scan result
-document.getElementById('qr-qty-minus').addEventListener('click', () => {
-  modalScanQty = Math.max(0, modalScanQty - 1);
-  document.getElementById('qr-qty-display').textContent = modalScanQty;
+// Scanner overlay controls
+document.getElementById('scanner-close-btn').addEventListener('click', closeScannerOverlay);
+
+document.getElementById('scanner-qty-minus').addEventListener('click', () => {
+  fsScanQty = Math.max(0, fsScanQty - 1);
+  document.getElementById('scanner-qty-display').textContent = fsScanQty;
 });
-document.getElementById('qr-qty-plus').addEventListener('click', () => {
-  modalScanQty++;
-  document.getElementById('qr-qty-display').textContent = modalScanQty;
+document.getElementById('scanner-qty-plus').addEventListener('click', () => {
+  fsScanQty++;
+  document.getElementById('scanner-qty-display').textContent = fsScanQty;
 });
-document.getElementById('qr-scan-back-btn').addEventListener('click', () => {
-  document.getElementById('qr-scan-result').style.display = 'none';
-  document.getElementById('qr-scan-back-row').style.display = 'block';
-  try { modalScanner && modalScanner.resume(); } catch(e) {}
+document.getElementById('scanner-back-btn').addEventListener('click', () => {
+  document.getElementById('scanner-result').style.display = 'none';
+  try { fsScanner && fsScanner.resume(); } catch(e) {}
 });
-document.getElementById('qr-scan-save-btn').addEventListener('click', async () => {
-  if (!modalScanFilament) return;
-  modalScanFilament.qty = modalScanQty;
-  await saveFilament(modalScanFilament);
+document.getElementById('scanner-save-btn').addEventListener('click', async () => {
+  if (!fsScanFilament) return;
+  fsScanFilament.qty = fsScanQty;
+  await saveFilament(fsScanFilament);
   await renderInventory();
-  alertIfLowStock(modalScanFilament);
-  showToast('Updated', `${modalScanFilament.name} → ${modalScanQty} spool${modalScanQty!==1?'s':''}`, 'success');
-  closeQRModal();
+  alertIfLowStock(fsScanFilament);
+  showToast('Updated', `${fsScanFilament.name} → ${fsScanQty} spool${fsScanQty!==1?'s':''}`, 'success');
+  closeScannerOverlay();
 });
 
 // ════════════════════════════════════════════════════════════
