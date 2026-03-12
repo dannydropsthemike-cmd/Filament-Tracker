@@ -460,19 +460,26 @@ async function openQRModal(id) {
   document.getElementById('qr-display-meta').textContent =
     `${f.brand ? f.brand + ' · ' : ''}${f.material}${f.colorName ? ' · ' + f.colorName : ''}`;
 
-  // Generate QR code
-  const canvas = document.getElementById('qr-display-canvas');
-  canvas.innerHTML = '';
+  // Generate QR code — fresh inner div prevents duplicate canvas+img render
+  const wrap = document.getElementById('qr-display-canvas');
+  wrap.innerHTML = '';
+  const qrDiv = document.createElement('div');
+  wrap.appendChild(qrDiv);
   try {
-    new QRCode(canvas, {
+    new QRCode(qrDiv, {
       text:         `filavault:${id}`,
       width:        220, height: 220,
       colorDark:    '#3D2B1F',
       colorLight:   '#FDFAF3',
       correctLevel: QRCode.CorrectLevel.M,
     });
+    // QRCode.js renders both a canvas AND an img — hide the img duplicate
+    setTimeout(() => {
+      const img = qrDiv.querySelector('img');
+      if (img) img.style.display = 'none';
+    }, 80);
   } catch(e) {
-    canvas.textContent = 'QR library not cached — visit once online first.';
+    wrap.textContent = 'QR library not cached — visit once online first.';
   }
 
   // Reset to show state

@@ -290,21 +290,23 @@ html, body {
 
 /* Fix: explicit size so QR code never clips */
 #qr-display-canvas {
-  width: 220px; height: 220px;
+  width: 232px; height: 232px;
   margin: 0 auto 16px;
   display: flex; align-items: center; justify-content: center;
   border-radius: var(--radius);
-  background: var(--surface);
-  border: 6px solid var(--surface);
+  background: #FDFAF3;
+  border: 6px solid #FDFAF3;
   box-shadow: var(--shadow-lg);
-  overflow: visible;
+  overflow: hidden;
 }
-#qr-display-canvas img,
 #qr-display-canvas canvas {
   width: 220px !important;
   height: 220px !important;
   display: block !important;
-  border-radius: 8px;
+  border-radius: 4px;
+}
+#qr-display-canvas img {
+  display: none !important;
 }
 
 .qr-filament-name { font-family: var(--serif); font-size: 20px; font-style: italic; color: var(--text); margin-bottom: 4px; }
