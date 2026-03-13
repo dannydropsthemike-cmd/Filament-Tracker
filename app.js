@@ -6,10 +6,23 @@
 
 // ── Service Worker ──────────────────────────────────────────
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
+  window.addEventListener('load', async () => {
+    // Unregister ALL existing service workers (clears any stale Filament-Tracker SW)
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const reg of regs) {
+      await reg.unregister();
+      console.log('[SW] Unregistered old SW:', reg.scope);
+    }
+    // Clear all caches
+    const cacheKeys = await caches.keys();
+    for (const key of cacheKeys) {
+      await caches.delete(key);
+      console.log('[SW] Deleted cache:', key);
+    }
+    // Now register fresh
     navigator.serviceWorker.register('sw.js')
-      .then(r => console.log('[SW]', r.scope))
-      .catch(e => console.warn('[SW] failed:', e));
+      .then(r => console.log('[SW] Registered:', r.scope))
+      .catch(e => console.warn('[SW] Failed:', e));
   });
 }
 
